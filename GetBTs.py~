@@ -1,0 +1,16 @@
+import numpy as np
+import EELsModels
+
+def BT(model):
+    model.Initialise()
+    model.GetIntrinsicMags()
+    BTv,BTi = model.BT()
+
+result = np.load('/data/ljo31/Lens/LensModels/J1125_212')
+print BT(model)
+result = np.load('/data/ljo31/Lens/LensModels/J1144_212_allparams')
+print BT(model)
+result = np.load('/data/ljo31/Lens/LensModels/J1323_212')
+print BT(model)
+result = np.load('/data/ljo31/Lens/LensModels/J1347_112')
+print BT(model)

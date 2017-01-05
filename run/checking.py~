@@ -1,0 +1,16 @@
+import numpy as np, pylab as pl, pyfits as py
+from linslens import EELsModels_huge as L
+
+def MakeTab(file,name):
+    result = np.load(file)
+    model = L.EELs(result,name)
+    model.Initialise()
+    model.GetFits(plotresid=True)
+    pl.show()
+
+files = ['/data/ljo31/Lens/J0837/twoband_0', '/data/ljo31/Lens/LensModels/J0901_211', '/data/ljo31/Lens/J0913/twoband_1', '/data/ljo31/Lens/LensModels/J1125_211', '/data/ljo31/Lens/J1144/twoband_1', '/data/ljo31/Lens/J1218/twoband_0', '/data/ljo31/Lens/J1323/twoband_0', '/data/ljo31/Lens/J1347/twoband_0', '/data/ljo31/Lens/J1446/twoband_0', '/data/ljo31/Lens/J1605/twoband_0', '/data/ljo31/Lens/J1606/twoband_0', '/data/ljo31/Lens/J1619/twoband_0', '/data/ljo31/Lens/J2228/twoband_0']
+
+names = ['J0837','J0901','J0913','J1125','J1144','J1323','J1347','J1446','J1605','J1606','J1619','J2228']
+
+for ii in range(len(names)):
+    MakeTab(files[ii],names[ii])

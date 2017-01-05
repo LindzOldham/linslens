@@ -1,0 +1,14 @@
+import numpy as np, pylab as pl, pyfits as py
+from tools import gus_plotting as g
+
+res1 = np.load('/data/ljo31b/EELs/aperture_mass_measure_inference')
+res2 = np.load('/data/ljo31b/EELs/galsub/emceeruns/J0901_parametric_DPL_0')
+
+lp1,trace1,dic1,_ = res1
+lp2,trace2,dic2,_ = res2
+
+ch1 = g.changechain(trace1[300:,0])
+ch2 = g.changechain(trace2[:,0])
+
+g.triangle_plot(ch1)
+g.triangle_plot(ch2)

@@ -1,0 +1,312 @@
+import EELsKeckLensModels as L
+import numpy as np
+
+def MakeTab(model):
+    model.MakeDict()
+    model.BuildLenses()
+    model.BuildGalaxies()
+    model.BuildSources()
+    model.EasyAddImages()
+    model.GetFits(plotresid=False)
+    mags = model.GalaxyObsMag()
+    Res = model.GalaxySize(kpc=True)
+    restmags, Ls = model.GetPhotometry()
+    mus = model.GetSB()
+    restmus = model.GetRestSB()
+    model.MakePDFDict()
+    model.GetPDFs(kpc=True)
+    med,lo,hi = model.UncertaintiesFromPDF(makecat=True)
+    return med,lo,hi
+
+'''
+
+cats_m, cats_l, cats_h = [], [], []
+result = np.load('/data/ljo31/Lens/J0837/Kp_0')
+hstresult = np.load('/data/ljo31/Lens/LensModels/J0837_211')
+model = L.EELs(result,hstresult,name='J0837')
+print 'J0837'
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+
+hstresult = np.load('/data/ljo31/Lens/LensModels/J0901_211')
+result = np.load('/data/ljo31/Lens/J0901/Kp_0')
+model = L.EELs(result,hstresult,name='J0901')
+print 'J0901'
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+
+
+hstresult = np.load('/data/ljo31/Lens/LensModels/J0913_211')
+result = np.load('/data/ljo31/Lens/J0913/Kp_211_0')
+model = L.EELs(result,hstresult,name='J0913')
+print 'J0913'
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+
+result = np.load('/data/ljo31/Lens/J1125/Kp_211_0')
+hstresult = np.load('/data/ljo31/Lens/LensModels/J1125_211')
+model = L.EELs(result,hstresult,name='J1125')
+print 'J1125'
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+
+result = np.load('/data/ljo31/Lens/J1144/Kp_211_0')
+hstresult = np.load('/data/ljo31/Lens/LensModels/J1144_211')
+model = L.EELs(result,hstresult,name='J1144')
+print 'J1144'
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+
+
+result = np.load('/data/ljo31/Lens/J1218/Kp_0')
+hstresult = np.load('/data/ljo31/Lens/LensModels/J1218_211')
+model = L.EELs(result,hstresult,name='J1218')
+print 'J1218'
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+
+result = np.load('/data/ljo31/Lens/J1323/Kp_211_7')
+hstresult = np.load('/data/ljo31/Lens/LensModels/J1323_211') 
+model = L.EELs(result,hstresult,name='J1323')
+print 'J1323'
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+
+result = np.load('/data/ljo31/Lens/J1347/Kp_211_0')
+hstresult = np.load('/data/ljo31/Lens/LensModels/J1347_211')
+model = L.EELs(result,hstresult,name='J1347')
+print 'J1347'
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+result = np.load('/data/ljo31/Lens/J1446/Kp_211_0')
+hstresult = np.load('/data/ljo31/Lens/LensModels/J1446_211')
+model = L.EELs(result,hstresult,name='J1446')
+print 'J1446'
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+
+result = np.load('/data/ljo31/Lens/J1605/Kp_211_0')
+hstresult = np.load('/data/ljo31/Lens/LensModels/J1605_211') 
+model = L.EELs(result,hstresult,name='J1605')
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+result = np.load('/data/ljo31/Lens/J1606/Kp_211_0')
+hstresult = np.load('/data/ljo31/Lens/LensModels/J1606_211')
+model = L.EELs(result,hstresult,name='J1606')
+print 'J1606'
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+result = np.load('/data/ljo31/Lens/J2228/Kp_211_0')
+hstresult = np.load('/data/ljo31/Lens/LensModels/J2228_211')
+model = L.EELs(result,hstresult,name='J2228')
+print 'J2228'
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+
+m, l, h = np.array(cats_m), np.array(cats_l), np.array(cats_h)
+
+
+from astropy.io.fits import *
+names = np.array(['J0837','J0901','J0913','J1125','J1144','J1218','J1323','J1347','J1446','J1605','J1606','J2228'])
+c1 = Column(name='name', format='A5',array=names)
+c2 = Column(name='mag k', format='D',array=m[:,0])
+c3 = Column(name='rest mag k', format='D',array=m[:,1])
+c4 = Column(name='mu k', format='D',array=m[:,2])
+c5 = Column(name='rest mu k', format='D',array=m[:,3])
+c6 = Column(name='Re k', format='D',array=m[:,4])
+c7 = Column(name='lum k', format='D',array=m[:,5])
+
+### and uncertainties - lower bounds
+c2l = Column(name='mag k lo', format='D',array=l[:,0])
+c3l = Column(name='rest mag k lo', format='D',array=l[:,1])
+c4l = Column(name='mu k lo', format='D',array=l[:,2])
+c5l = Column(name='rest mu k lo', format='D',array=l[:,3])
+c6l = Column(name='Re k lo', format='D',array=l[:,4])
+c7l = Column(name='lum k lo', format='D',array=l[:,5])
+
+
+### and upper bounds
+c2h = Column(name='mag k hi', format='D',array=h[:,0])
+c3h = Column(name='rest mag k hi', format='D',array=h[:,1])
+c4h = Column(name='mu k hi' , format='D',array=h[:,2])
+c5h = Column(name='rest mu k hi', format='D',array=h[:,3])
+c6h = Column(name='Re k hi', format='D',array=h[:,4])
+c7h = Column(name='lum k hi', format='D',array=h[:,5])
+
+
+
+coldefs = ColDefs([c1,c2,c3,c4,c5,c6,c7,c2l,c3l,c4l,c5l,c6l,c7l,c2h,c3h,c4h,c5h,c6h,c7h])
+tbhdu = BinTableHDU.from_columns(coldefs)
+tbhdu.writeto('/data/ljo31/Lens/LensParams/KeckGalPhot_1src.fits',clobber=True)
+
+# nomult = not multiplying by pix**2
+# otherwise - multiplying by pix**2. Need to work out which one is right!!!
+'''
+## 2 src models
+cats_m, cats_l, cats_h = [], [], []
+
+
+#result = np.load('/data/ljo31/Lens/LensModels/J0913_212_concentric')
+#model = L.EELs(result,name='J0913')
+#print 'J0913 concentric'
+#MakeTab(model)
+
+result = np.load('/data/ljo31/Lens/LensModels/J0913_Kp_212')
+hstresult = np.load('/data/ljo31/Lens/LensModels/J0913_212_nonconcentric')
+model = L.EELs(result,hstresult,name='J0913')
+print 'J0913 nonconcentric'
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+#result = np.load('/data/ljo31/Lens/LensModels/J1125_212_concentric')
+#model = L.EELs(result,name='J1125')
+#print 'J1125 concentric'
+#MakeTab(model)
+
+result = np.load('/data/ljo31/Lens/LensModels/J1125_Kp_212')
+hstresult = np.load('/data/ljo31/Lens/LensModels/J1125_212_nonconcentric')
+model = L.EELs(result,hstresult,name='J1125')
+print 'J1125 nonconcentric'
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+
+result = np.load('/data/ljo31/Lens/LensModels/J1144_Kp_212')
+hstresult = np.load('/data/ljo31/Lens/LensModels/J1144_212_allparams')
+model = L.EELs(result,hstresult,name='J1144')
+print 'J1144'
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+result = np.load('/data/ljo31/Lens/LensModels/J1323_Kp_212')
+hstresult = np.load('/data/ljo31/Lens/LensModels/J1323_212') 
+model = L.EELs(result,hstresult,name='J1323')
+print 'J1323'
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+
+result = np.load('/data/ljo31/Lens/LensModels/J1347_Kp_112')
+hstresult = np.load('/data/ljo31/Lens/LensModels/J1347_112')
+model = L.EELs(result,hstresult,name='J1347')
+print 'J1347'
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+result = np.load('/data/ljo31/Lens/LensModels/J1446_Kp_212')
+hstresult = np.load('/data/ljo31/Lens/LensModels/J1446_212')
+model = L.EELs(result,hstresult,name='J1446')
+print 'J1446'
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+result = np.load('/data/ljo31/Lens/LensModels/J1605_Kp_212')
+hstresult = np.load('/data/ljo31/Lens/LensModels/J1605_212_final') 
+model = L.EELs(result,hstresult,name='J1605')
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+
+result = np.load('/data/ljo31/Lens/LensModels/J1606_Kp_112')
+hstresult = np.load('/data/ljo31/Lens/LensModels/J1606_112')
+model = L.EELs(result,hstresult,name='J1606')
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+result = np.load('/data/ljo31/Lens/LensModels/J2228_Kp_212')
+hstresult = np.load('/data/ljo31/Lens/LensModels/J2228_212')
+model = L.EELs(result,hstresult,name='J2228')
+med,lo,hi = MakeTab(model)
+cats_m.append(med)
+cats_l.append(lo)
+cats_h.append(hi)
+
+m, l, h = np.array(cats_m), np.array(cats_l), np.array(cats_h)
+
+
+from astropy.io.fits import *
+names = np.array(['J0913','J1125','J1144','J1323','J1347','J1446','J1605','J1606','J2228'])
+c1 = Column(name='name', format='A5',array=names)
+c2 = Column(name='mag k', format='D',array=m[:,0])
+c3 = Column(name='rest mag k', format='D',array=m[:,1])
+c4 = Column(name='mu k', format='D',array=m[:,2])
+c5 = Column(name='rest mu k', format='D',array=m[:,3])
+c6 = Column(name='Re k', format='D',array=m[:,4])
+c7 = Column(name='lum k', format='D',array=m[:,5])
+
+### and uncertainties - lower bounds
+c2l = Column(name='mag k lo', format='D',array=l[:,0])
+c3l = Column(name='rest mag k lo', format='D',array=l[:,1])
+c4l = Column(name='mu k lo', format='D',array=l[:,2])
+c5l = Column(name='rest mu k lo', format='D',array=l[:,3])
+c6l = Column(name='Re k lo', format='D',array=l[:,4])
+c7l = Column(name='lum k lo', format='D',array=l[:,5])
+
+
+### and upper bounds
+c2h = Column(name='mag k hi', format='D',array=h[:,0])
+c3h = Column(name='rest mag k hi', format='D',array=h[:,1])
+c4h = Column(name='mu k hi' , format='D',array=h[:,2])
+c5h = Column(name='rest mu k hi', format='D',array=h[:,3])
+c6h = Column(name='Re k hi', format='D',array=h[:,4])
+c7h = Column(name='lum k hi', format='D',array=h[:,5])
+
+
+
+coldefs = ColDefs([c1,c2,c3,c4,c5,c6,c7,c2l,c3l,c4l,c5l,c6l,c7l,c2h,c3h,c4h,c5h,c6h,c7h])
+tbhdu = BinTableHDU.from_columns(coldefs)
+tbhdu.writeto('/data/ljo31/Lens/LensParams/KeckGalPhot_2src.fits',clobber=True)
+
+

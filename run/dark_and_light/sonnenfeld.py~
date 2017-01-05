@@ -1,0 +1,15 @@
+import numpy as np, pylab as pl
+
+# lens SL2SJ142059+563007
+
+Reff = 1.62
+q=0.54
+pa=-12.6
+n=4.
+Rein = 1.4
+dRein = 0.04
+ql = 0.67
+dql = 0.01
+pa = -10.4
+dpa = 0.3
+z = 0.483

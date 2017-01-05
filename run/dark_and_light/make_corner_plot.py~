@@ -1,0 +1,18 @@
+import corner_plot
+import numpy as np, pylab as pl
+
+result = np.load('/data/ljo31b/EELs/galsub/emceeruns/J0901_parametric_sDPL_3')
+lp,trace,dic,_ = result
+arr = []
+for key in dic.keys():
+    dic[key] = dic[key][:,0].ravel()
+for key in dic.keys():
+    arr.append(dic[key])
+arr=np.array(arr)
+
+labels_1 = ['$R_{Ein}$', '$y_l$', '$n_s$', '$\log r_s$','$M_{\star}$','$y_s$',r'$\theta_s$','$q_l$','$q_s$','$x_l$','SH',r'$\gamma$','$r_{e,s}$','$x_s$','SHPA','LPA']
+
+labels_2 = ['$R_{Ein}$', '$y_l$', '$n_s$', '$\log r_s$','$M_{\star}$','$y_s$',r'$\theta_s$','$q_s$','$x_l$','SH',r'$\gamma$','$r_{e,s}$','$x_s$','SHPA']
+
+arr[3] = np.log10(arr[3])
+corner_plot.corner_plot(arr.T,axis_labels=labels_2)

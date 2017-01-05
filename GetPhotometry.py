@@ -3,17 +3,28 @@ import pylab as pl
 import pyfits as py
 from stellarpop import tools, distances
 import itertools
+from scipy.interpolate import splrep, splev, splint
 
 dist = distances.Distance()
+chabrier = np.load('/home/mauger/python/stellarpop/chabrier.dat')
+ages = chabrier['age']
+ages = np.log10(ages)
+ages[0]=5.
+wave=chabrier['wave']
+solarSpectra = chabrier[6]
 
-
-def MassK(K,z,age='4.000'):
-    sed = tools.getSED('BC_Z=1.0_age='+age+'gyr')
+### need to calculate new synthetic photometry using Matt's SEDs! Nobody knows the provenance of these ones....
+def MassK(K,z,age=4.):
+    logT = np.log10(age)
     kfilt = tools.filterfromfile('Kp_NIRC2')
-    K_modrest = tools.ABFM(kfilt,sed,0.0) 
-    K_modobs = tools.ABFM(kfilt,sed,z)
+    modobs = np.zeros(ages.size)
+    modrest = modobs*0.
+    for a in range(ages.size):
+        modobs[a] = tools.ABFM(kfilt,[wave,solarSpectra[a]],z)
+        modrest[a] = tools.ABFM(kfilt,[wave,solarSpectra[a]],0.)
+    interp_Krest,interp_Kobs  = splrep(ages,modrest),splrep(ages,modobs)
+    K_modrest,K_modobs = splev(logT,interp_Krest),splev(logT,interp_Kobs)
     K_rest = K + K_modrest - K_modobs
-    mass_K = 0.4*(K_rest - K_modrest)
     K_sun = 5.19
     DL = dist.luminosity_distance(z)
     DM = 5.*np.log10(DL*1e6) - 5.
@@ -21,74 +32,95 @@ def MassK(K,z,age='4.000'):
     lum = -0.4*(K_restabs - K_sun)
     return lum, K_rest
 
-def MassR(R,z,age='4.000'):
-    sed = tools.getSED('BC_Z=1.0_age='+age+'gyr')
-    rfilt = tools.filterfromfile('F814W_ACS')  
-    R_modrest = tools.ABFM(rfilt,sed,0.0)
-    R_modobs = tools.ABFM(rfilt,sed,z)
-    R_rest = R + R_modrest - R_modobs
-    mass_R = 0.4*(R_rest - R_modrest)
-    R_sun = 4.57
+def MassI(I,z,age=4.):
+    logT = np.log10(age)
+    ifilt = tools.filterfromfile('F814W_ACS')  
+    modobs = np.zeros(ages.size)
+    modrest = modobs*0.
+    for a in range(ages.size):
+        modobs[a] = tools.ABFM(ifilt,[wave,solarSpectra[a]],z)
+        modrest[a] = tools.ABFM(ifilt,[wave,solarSpectra[a]],0.)
+    interp_Irest,interp_Iobs  = splrep(ages,modrest),splrep(ages,modobs)
+    I_modrest,I_modobs = splev(logT,interp_Irest),splev(logT,interp_Iobs)
+    I_rest = I + I_modrest - I_modobs
+    I_sun = 4.57
     DL = dist.luminosity_distance(z)
     DM = 5.*np.log10(DL*1e6) - 5.
-    R_restabs = R_rest - DM
-    lum = -0.4*(R_restabs - R_sun)
-    return lum, R_rest
+    I_restabs = I_rest - DM
+    lum = -0.4*(I_restabs - I_sun)
+    return lum, I_rest
 
-def MassB1(B,z,age='4.000'):
-    sed = tools.getSED('BC_Z=1.0_age='+age+'gyr')
-    bfilt = tools.filterfromfile('F606W_ACS')
-    B_modrest = tools.ABFM(bfilt,sed,0.0) 
-    B_modobs = tools.ABFM(bfilt,sed,z)
-    B_rest = B + B_modrest - B_modobs
-    mass_B = 0.4*(B_rest - B_modrest)
-    B_sun = 4.74
+def MassV1(V,z,age=4.):
+    logT = np.log10(age)
+    vfilt = tools.filterfromfile('F606W_ACS')  
+    modobs = np.zeros(ages.size)
+    modrest = modobs*0.
+    for a in range(ages.size):
+        modobs[a] = tools.ABFM(vfilt,[wave,solarSpectra[a]],z)
+        modrest[a] = tools.ABFM(vfilt,[wave,solarSpectra[a]],0.)
+    interp_Vrest,interp_Vobs  = splrep(ages,modrest),splrep(ages,modobs)
+    V_modrest,V_modobs = splev(logT,interp_Vrest),splev(logT,interp_Vobs)
+    V_rest = V + V_modrest - V_modobs
+    V_sun = 4.74
     DL = dist.luminosity_distance(z)
     DM = 5.*np.log10(DL*1e6) - 5.
-    B_restabs = B_rest - DM
-    lum = -0.4*(B_restabs - B_sun)
-    return lum, B_rest
+    V_restabs = V_rest - DM
+    lum = -0.4*(V_restabs - V_sun)
+    return lum, V_rest
 
-def MassB2(B,z,age='4.000'):
-    sed = tools.getSED('BC_Z=1.0_age='+age+'gyr')
-    bfilt = tools.filterfromfile('F555W_ACS')
-    B_modrest = tools.ABFM(bfilt,sed,0.0) 
-    B_modobs = tools.ABFM(bfilt,sed,z)
-    B_rest = B + B_modrest - B_modobs
-    mass_B = 0.4*(B_rest - B_modrest)
-    B_sun = 4.83
+
+def MassV2(V,z,age=4.):
+    logT = np.log10(age)
+    vfilt = tools.filterfromfile('F555W_ACS')  
+    modobs = np.zeros(ages.size)
+    modrest = modobs*0.
+    for a in range(ages.size):
+        modobs[a] = tools.ABFM(vfilt,[wave,solarSpectra[a]],z)
+        modrest[a] = tools.ABFM(vfilt,[wave,solarSpectra[a]],0.)
+    interp_Vrest,interp_Vobs  = splrep(ages,modrest),splrep(ages,modobs)
+    V_modrest,V_modobs = splev(logT,interp_Vrest),splev(logT,interp_Vobs)
+    V_rest = V + V_modrest - V_modobs
+    V_sun = 4.83
     DL = dist.luminosity_distance(z)
     DM = 5.*np.log10(DL*1e6) - 5.
-    B_restabs = B_rest - DM
-    lum = -0.4*(B_restabs - B_sun)
-    return lum, B_rest
+    V_restabs = V_rest - DM
+    lum = -0.4*(V_restabs - V_sun)
+    return lum, V_rest
 
-def MassB1toB(B,z,age='4.000'):
-    sed = tools.getSED('BC_Z=1.0_age='+age+'gyr')
-    bfilt = tools.filterfromfile('F606W_ACS')
+def MassV1toB(V,z,age=4.):
+    logT = np.log10(age)
+    vfilt = tools.filterfromfile('F606W_ACS')  
     restfilt = tools.filterfromfile('F435W_ACS')
-    B_modrest = tools.ABFM(restfilt,sed,0.0) 
-    B_modobs = tools.ABFM(bfilt,sed,z)
-    B_rest = B + B_modrest - B_modobs
-    mass_B = 0.4*(B_rest - B_modrest)
-    B_sun = 5.372 # ref: EzGal
+    modobs = np.zeros(ages.size)
+    modrest = modobs*0.
+    for a in range(ages.size):
+        modobs[a] = tools.ABFM(vfilt,[wave,solarSpectra[a]],z)
+        modrest[a] = tools.ABFM(restfilt,[wave,solarSpectra[a]],0.)
+    interp_Vrest,interp_Vobs  = splrep(ages,modrest),splrep(ages,modobs)
+    V_modrest,V_modobs = splev(logT,interp_Vrest),splev(logT,interp_Vobs)
+    V_rest = V + V_modrest - V_modobs
+    V_sun = 4.74
     DL = dist.luminosity_distance(z)
     DM = 5.*np.log10(DL*1e6) - 5.
-    B_restabs = B_rest - DM
-    lum = -0.4*(B_restabs - B_sun)
-    return lum, B_rest
+    V_restabs = V_rest - DM
+    lum = -0.4*(V_restabs - V_sun)
+    return lum, V_rest
 
-def MassB2toB(B,z,age='4.000'):
-    sed = tools.getSED('BC_Z=1.0_age='+age+'gyr')
-    bfilt = tools.filterfromfile('F555W_ACS')
+def MassV2toB(V,z,age=4.):
+    logT = np.log10(age)
+    vfilt = tools.filterfromfile('F555W_ACS')  
     restfilt = tools.filterfromfile('F435W_ACS')
-    B_modrest = tools.ABFM(restfilt,sed,0.0) 
-    B_modobs = tools.ABFM(bfilt,sed,z)
-    B_rest = B + B_modrest - B_modobs
-    mass_B = 0.4*(B_rest - B_modrest)
-    B_sun = 5.372
+    modobs = np.zeros(ages.size)
+    modrest = modobs*0.
+    for a in range(ages.size):
+        modobs[a] = tools.ABFM(vfilt,[wave,solarSpectra[a]],z)
+        modrest[a] = tools.ABFM(restfilt,[wave,solarSpectra[a]],0.)
+    interp_Vrest,interp_Vobs  = splrep(ages,modrest),splrep(ages,modobs)
+    V_modrest,V_modobs = splev(logT,interp_Vrest),splev(logT,interp_Vobs)
+    V_rest = V + V_modrest - V_modobs
+    V_sun = 4.83
     DL = dist.luminosity_distance(z)
     DM = 5.*np.log10(DL*1e6) - 5.
-    B_restabs = B_rest - DM
-    lum = -0.4*(B_restabs - B_sun)
-    return lum, B_rest
+    V_restabs = V_rest - DM
+    lum = -0.4*(V_restabs - V_sun)
+    return lum, V_rest

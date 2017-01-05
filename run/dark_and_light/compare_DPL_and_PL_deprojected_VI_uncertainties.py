@@ -1,0 +1,278 @@
+from linslens.Profiles import *
+from astLib import astCalc
+import glob, numpy as np, pylab as pl
+import lenslib
+from jeans.makemodel import deproject
+import GetStellarMass
+import cPickle
+from scipy.interpolate import splev,splrep,splint
+from linslens import PROFILES
+import sys
+
+name = sys.argv[1]
+
+names = ['J0837','J0901','J0913','J1125','J1144','J1218','J1323','J1347','J1446','J1605','J1606','J1619','J2228']
+Mvir, dMvir, r_eff, dr_eff = np.load('/data/ljo31/Lens/LensParams/Mvir.npy')
+lz = np.load('/data/ljo31/Lens/LensParams/LensRedshiftsUpdated.npy')[()]
+sz = np.load('/data/ljo31/Lens/LensParams/SourceRedshiftsUpdated.npy')[()]
+
+#name = 'J1144'
+
+dir = '/data/ljo31b/EELs/galsub/emceeruns/'
+file = glob.glob(dir+name+'_parametric_VI_*')
+file.sort()
+f = file[-1]
+print f
+result_PL = np.load(f)
+
+file = glob.glob(dir+name+'_parametric_DPL__VI_*')
+file.sort()
+f = file[-1]
+print f 
+result_DPL = np.load(f)
+
+
+lp_PL,trace_PL,dic_PL,_ = result_PL
+lp_DPL,trace_DPL,dic_DPL,_ = result_DPL
+                 
+### POWER LAW ####
+## construct power-law sigma and mass
+zl,zs = lz[name][0], sz[name][0]
+sig_crit = lenslib.sig_crit(zl,zs) # solar masses per Mpc^2
+sig_crit /= (1e3)**2. # solar masses per kpc^2
+scale = astCalc.da(zl)*np.pi/180./3600 * 1e3
+rein = np.median(dic_PL['Lens 1 b'][:,0])*0.05*scale # rein in kpc
+eta = np.median(dic_PL['Lens 1 eta'][:,0])
+q = np.median(dic_PL['Lens 1 q'][:,0])
+
+# make mass objects
+r = np.logspace(-7,4,4500)
+lr = r[:-100]
+m_PL = PROFILES.PowerLaw(x=0.,y=0.,eta=eta,pa=0.,q=q,b=rein,zl=zl,zs=zs)
+mass_PL = m_PL.mass(r)
+rho_PL = m_PL.rho(r)
+
+### get uncertainties
+for key in ['Lens 1 q','Lens 1 b','Lens 1 eta']:
+    dic_PL[key] = dic_PL[key][::10,0].ravel()[::100]
+length = len(dic_PL[key])
+m_PL = np.zeros((length, len(mass_PL)))
+r_PL = np.zeros((length, len(rho_PL)))
+print r_PL.shape
+for step in range(length):
+    rein,eta,q = dic_PL['Lens 1 b'][step]*0.05*scale, dic_PL['Lens 1 eta'][step], dic_PL['Lens 1 q'][step]
+    mm_PL = PROFILES.PowerLaw(x=0.,y=0.,eta=eta,pa=0.,q=q,b=rein,zl=zl,zs=zs)
+    m_PL[step] = mm_PL.mass(r)
+    r_PL[step] = mm_PL.rho(r)
+        
+mass_PL = np.array(mass_PL)
+rho_PL = np.array(rho_PL)
+m_m_PL, l_m_PL, u_m_PL = mass_PL*0., mass_PL*0., mass_PL*0.
+m_r_PL, l_r_PL, u_r_PL = rho_PL*0., rho_PL*0., rho_PL*0.
+print m_PL.shape, m_m_PL.shape
+for ii in range(r.size):
+    m_m_PL[ii] = np.median(m_PL[:,ii])
+    l_m_PL[ii] = np.percentile(m_PL[:,ii],16)
+    u_m_PL[ii] = np.percentile(m_PL[:,ii],84)
+    ###########################################
+    m_r_PL[ii] = np.median(r_PL[:,ii])
+    l_r_PL[ii] = np.percentile(r_PL[:,ii],16)
+    u_r_PL[ii] = np.percentile(r_PL[:,ii],84)
+
+#### GNFW ####
+### gNFW sigma and mass
+rs, rein = np.median(dic_DPL['Lens 1 rs'][:,0])*0.05*scale,np.median(dic_DPL['Lens 1 b'][:,0])*0.05*scale 
+gamma = np.median(dic_DPL['Lens 1 gamma'][:,0])
+try:
+    q = np.median(dic_DPL['Lens 1 q'][:,0])
+except:
+    q=0.8
+    print 'havent inferred q!'
+
+m_DPL = PROFILES.gNFW_TC(x=0.,y=0.,eta=gamma,rs=rs,pa=0.,q=q,b=rein,zl=zl,zs=zs)
+mass_DPL = m_DPL.mass(r)
+rho_DPL = m_DPL.rho(r)
+'''
+## for fixed q for now. Change asap.
+### get uncertainties
+for key in ['Lens 1 b','Lens 1 gamma','Lens 1 rs']:
+    dic_DPL[key] = dic_DPL[key][::10,0].ravel()[::100]
+length = len(dic_DPL[key])
+m_DPL = np.zeros((length, len(mass_DPL)))
+r_DPL = np.zeros((length, len(rho_DPL)))
+for step in range(length):
+    rein,eta = dic_DPL['Lens 1 b'][step]*0.05*scale, dic_DPL['Lens 1 gamma'][step]
+    rs = dic_DPL['Lens 1 rs'][step]*0.05*scale
+    mm_DPL = PROFILES.gNFW_TC(x=0.,y=0.,eta=gamma,rs=rs,pa=0.,q=q,b=rein,zl=zl,zs=zs)
+    m_DPL[step] = mm_DPL.mass(r)
+    r_DPL[step] = mm_DPL.rho(r)'''
+
+
+for key in ['Lens 1 q','Lens 1 b','Lens 1 gamma','Lens 1 rs']:
+    dic_DPL[key] = dic_DPL[key][::10,0].ravel()[::100]
+length = len(dic_DPL[key])
+m_DPL = np.zeros((length, len(mass_DPL)))
+r_DPL = np.zeros((length, len(rho_DPL)))
+for step in range(length):
+    rein,eta,q = dic_DPL['Lens 1 b'][step]*0.05*scale, dic_DPL['Lens 1 gamma'][step], dic_DPL['Lens 1 q'][step]
+    rs = dic_DPL['Lens 1 rs'][step]*0.05*scale
+    mm_DPL = PROFILES.gNFW_TC(x=0.,y=0.,eta=gamma,rs=rs,pa=0.,q=q,b=rein,zl=zl,zs=zs)
+    m_DPL[step] = mm_DPL.mass(r)
+    r_DPL[step] = mm_DPL.rho(r)
+             
+mass_DPL = np.array(mass_DPL)
+rho_DPL = np.array(rho_DPL)
+m_m_DPL, l_m_DPL, u_m_DPL = mass_DPL*0., mass_DPL*0., mass_DPL*0.
+m_r_DPL, l_r_DPL, u_r_DPL = rho_DPL*0., rho_DPL*0., rho_DPL*0.
+
+for ii in range(lr.size):
+    m_m_DPL[ii] = np.median(m_DPL[:,ii])
+    l_m_DPL[ii] = np.percentile(m_DPL[:,ii],16)
+    u_m_DPL[ii] = np.percentile(m_DPL[:,ii],84)
+    ###########################################
+    m_r_DPL[ii] = np.median(r_DPL[:,ii])
+    l_r_DPL[ii] = np.percentile(r_DPL[:,ii],16)
+    u_r_DPL[ii] = np.percentile(r_DPL[:,ii],84)
+
+### also old result -- Einstein radius
+cat = np.load('/data/ljo31/Lens/LensParams/Structure_lensgals_2src.npy')[0]
+rein = cat[name]['Lens 1 b']*0.05*scale
+
+# add in LM!
+dir = '/data/ljo31/Lens/LensModels/twoband/'
+try:
+    oresult = np.load(dir+name+'_212')
+except:
+    if name == 'J1347':
+        oresult = np.load(dir+name+'_112')
+    else:
+        oresult = np.load(dir+name+'_211')
+
+Mstar_PL = np.median(dic_PL['stellar mass'][:,0])
+Mstar_DPL = np.median(dic_DPL['stellar mass'][:,0])
+_,sb_M,cum_M = GetStellarMass.GetStellarMass(oresult,1.,r,scale,name,deprojected=True)
+sb_M_PL, sb_M_DPL = sb_M*Mstar_PL, sb_M*Mstar_DPL
+cum_M_PL, cum_M_DPL = cum_M*Mstar_PL, cum_M*Mstar_DPL
+
+## uncertainties
+l_Mstar_PL = np.percentile(dic_PL['stellar mass'][:,0],16)
+l_Mstar_DPL = np.percentile(dic_DPL['stellar mass'][:,0],16)
+u_Mstar_PL = np.percentile(dic_PL['stellar mass'][:,0],84)
+u_Mstar_DPL = np.percentile(dic_DPL['stellar mass'][:,0],84)
+
+
+## finally, add original inference for total mass
+rein, eta = cat[name]['Lens 1 b']*0.05*scale, cat[name]['Lens 1 eta']
+q = cat[name]['Lens 1 q']
+m_TPL = PROFILES.PowerLaw(x=0.,y=0.,eta=eta,pa=0.,q=q,b=rein,zl=zl,zs=zs)
+mass_TPL = m_TPL.mass(r)
+rho_TPL = m_TPL.rho(r)
+
+####
+####
+####
+names = np.array(names)
+
+pl.figure(figsize=(24,7))
+pl.subplot(131)
+pl.title('gNFW')
+pl.fill_between(lr,cum_M*l_Mstar_DPL,cum_M*u_Mstar_DPL,color='LightPink',alpha=0.5) # uncertainties on DPL Mstar
+pl.plot(lr,cum_M_DPL,color='Crimson', label= 'stellar mass')# DPL median Mstar
+pl.fill_between(lr,l_m_DPL,u_m_DPL,color='LightBlue',alpha=0.5) # DPL DM uncertainties
+pl.plot(lr,m_m_DPL,color='SteelBlue',label='dark matter')
+pl.yscale('log')
+pl.axis([0,10,1e8,6e11])
+pl.ylabel('cumulative deprojected mass')
+pl.axvline(rein,color='k',ls='-') # Einstein radius
+pl.axvline(r_eff[names==name],color='k',ls='--') # effective radius
+
+
+pl.subplot(132)
+pl.title('power law')
+# do the same for PL
+pl.fill_between(lr,cum_M*l_Mstar_PL,cum_M*u_Mstar_PL,color='LightPink',alpha=0.5) # uncertainties on PL Mstar
+pl.plot(lr,cum_M_PL,color='Crimson', label= 'stellar mass')# PL median Mstar
+## DM
+pl.fill_between(lr,l_m_PL[:-100],u_m_PL[:-100],color='LightBlue',alpha=0.5) # PL DM uncertainties
+pl.plot(lr,m_m_PL[:-100],color='SteelBlue',label='dark matter')
+pl.yscale('log')
+pl.axis([0,20,5e6,1e12])
+pl.axvline(rein,color='k',ls='-') # Einstein radius
+pl.axvline(r_eff[names==name],color='k',ls='--') # effective radius
+pl.xlabel('R / kpc')
+pl.legend(loc='lower right')
+pl.axis([0,10,1e8,6e11])
+
+pl.subplot(133)
+pl.title('total profiles')
+## PL
+pl.fill_between(lr,cum_M*l_Mstar_PL+l_m_PL[:-100],cum_M*u_Mstar_PL+u_m_PL[:-100],color='PaleGreen',alpha=0.5) 
+pl.plot(lr,cum_M_PL+m_m_PL[:-100],color='SeaGreen',label='power law')
+### DPL
+pl.fill_between(lr,cum_M*l_Mstar_DPL+l_m_DPL,cum_M*u_Mstar_DPL+u_m_DPL,color='Plum',alpha=0.5) 
+pl.plot(lr,cum_M_DPL+m_m_DPL,color='Purple',label='gNFW')
+pl.legend(loc='lower right')
+pl.yscale('log')
+pl.axis([0,10,1e8,6e11])
+pl.axvline(rein,color='k',ls='-') # Einstein radius
+pl.axvline(r_eff[names==name],color='k',ls='--') # effective radius
+pl.savefig('/data/ljo31/public_html/Lens/dark_and_light/compare_profiles_new/deprojected_VI_uncertainties%s.pdf'%name)
+
+pl.show()
+
+#pl.figure()
+#pl.plot(lr,cumsig_DPL[:-100]/(cumsig_DPL[:-100]+cum_M_DPL),color='SteelBlue')
+#pl.plot(lr,cumsig_PL[:-100]/(cumsig_PL[:-100]+cum_M_PL),color='Crimson')
+#pl.xlim([0,20])
+#pl.show()
+
+apl,adpl = np.min(dic_PL['stellar mass'][:,0].ravel()*10), np.min(dic_DPL['stellar mass'][:,0].ravel()*10)
+bpl,bdpl = np.max(dic_PL['stellar mass'][:,0].ravel()*10), np.max(dic_DPL['stellar mass'][:,0].ravel()*10)
+
+
+pl.figure()
+pl.hist(dic_PL['stellar mass'][:,0].ravel()*10,bins=np.arange(apl-0.05,bpl+0.05,(bpl-apl+0.1)/30.),alpha=0.5,label='power law',histtype='stepfilled',normed=True)
+pl.hist(dic_DPL['stellar mass'][:,0].ravel()*10,bins=np.arange(adpl-0.05,bdpl+0.05,(bdpl-adpl+0.1)/30.),alpha=0.5,label='gNFW',histtype='stepfilled',normed=True)
+pl.legend(loc='upper left',fontsize=25)
+pl.xlabel('M$_{\star}$ ( 10$^{11}$ M$_{\odot}$)')
+pl.ylabel('probability density')
+pl.savefig('/data/ljo31/public_html/Lens/dark_and_light/compare_profiles_new/stellarmass_VI_%s.pdf'%name)
+pl.show()
+
+pl.figure(figsize=(15,7))
+pl.subplot(121)
+pl.plot(lp_PL[:,0])
+pl.subplot(122)
+pl.plot(lp_DPL[:,0])
+pl.show()
+
+dir = '/data/ljo31b/EELs/galsub/emceeruns/'
+file = glob.glob(dir+name+'_parametric_VI_*')
+file.sort()
+f = file[-1]
+result_PL = np.load(f)
+
+file = glob.glob(dir+name+'_parametric_DPL__VI_*')
+file.sort()
+f = file[-1]
+result_DPL = np.load(f)
+
+lp_PL,trace_PL,dic_PL,_ = result_PL
+lp_DPL,trace_DPL,dic_DPL,_ = result_DPL
+print dic_PL['Lens 1 eta'].shape, dic_DPL['Lens 1 gamma'].shape
+     
+apl,adpl = np.min(dic_PL['Lens 1 eta'][:,0].ravel()+1.), np.min(dic_DPL['Lens 1 gamma'][:,0].ravel())
+bpl,bdpl = np.max(dic_PL['Lens 1 eta'][:,0].ravel()+1.), np.max(dic_DPL['Lens 1 gamma'][:,0].ravel())
+
+
+pl.figure()
+pl.hist(dic_PL['Lens 1 eta'][:,0].ravel()+1.,bins=np.arange(apl-0.05,bpl+0.05,(bpl-apl+0.1)/30.),alpha=0.5,label='power law',histtype='stepfilled',normed=True)
+
+pl.hist(dic_DPL['Lens 1 gamma'][:,0].ravel(),bins=np.arange(adpl-0.05,bdpl+0.05,(bdpl-adpl+0.1)/30.),alpha=0.5,label='gNFW',histtype='stepfilled',normed=True)
+pl.legend(loc='upper left',fontsize=25)
+pl.xlabel('3D density slope')
+pl.ylabel('probability density')
+pl.savefig('/data/ljo31/public_html/Lens/dark_and_light/compare_profiles_new/slope_VI_%s.pdf'%name)
+pl.show()
+
+

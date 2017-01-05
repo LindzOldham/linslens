@@ -1,0 +1,73 @@
+import numpy as np, pylab as pl, pyfits as py
+
+# contour plot the inference for J0901 from my dark+light models
+name='J0901'
+dir = '/data/ljo31b/EELs/galsub/emceeruns/'
+file = glob.glob(dir+name+'_parametric_DPL*')
+file.sort()
+f = file[-1]
+print f
+result_DPL = np.load(f)
+
+## construct simple model
+fp = np.load('/data/ljo31b/EELs/esi/kinematics/inference/results_0.30_source_indous_vdfit_jul2016_J2228.npy')
+l,m,u = fp
+d = np.mean((l,u),axis=0)
+dvl,dvs,dsigmal,dsigmas = d.T
+vl,vs,sigmal,sigmas = m.T
+s1 = sigmal.copy()
+dsigmas = s1*0.05
+
+# Einstein radius
+lz = np.load('/data/ljo31/Lens/LensParams/LensRedshiftsUpdated.npy')[()]
+sz = np.load('/data/ljo31/Lens/LensParams/SourceRedshiftsUpdated.npy')[()]
+zl,zs = lz[name][0],sz[name][0]
+scale = astCalc.da(zl)*np.pi/180./3600 * 1e3
+
+cat = np.load('/data/ljo31/Lens/LensParams/Structure_lensgals_2src.npy')[0]
+rein = cat[name]['Lens 1 b']*0.05*scale # in kpc
+dr1  = np.load('/data/ljo31/Lens/LensParams/Structure_lensgals_2src.npy')[1][name]['Lens 1 b']
+dr2 = np.load('/data/ljo31/Lens/LensParams/Structure_lensgals_2src.npy')[2][name]['Lens 1 b']
+drein = np.mean((dr1,dr2))*0.05*scale
+
+sig_crit = lenslib.sig_crit(zl,zs) # solar masses per Mpc^2
+sig_crit /= (1e3)**2. # solar masses per kpc^2
+
+## DATAPOINTS
+SIGMA,MEIN = s1, sig_crit * np.pi * rein**2. * 1e-10 #units 10^10 Mdot
+DSIGMA = SIGMA*0.05
+DMEIN = 2.* drein / rein * MEIN
+
+## MODEL
+# compute sigma within 1 re
+ML = pymc.Uniform(0.01,100,value=1.)
+gamma = pymc.Uniform(0.5,2.5,value=1) 
+rho0 = pymc.Uniform(4,12,value=8)
+rs = pymc.Uniform(20,600,value=300.)
+
+pars = [ML,gamma,rho0,rs]
+cov = [1.,0.2,1.,20.]
+
+@pymc.deterministic
+def logP(value=0.,p=pars):
+    r0 = 10**rho0.value
+    s2 = ML.value * sigma_star + r0 * sigma_dm.eval(np.column_stack((rs.value,gamma.value)))
+    lp1 = (SIGMA-s2**0.5)**2. /DSIGMA**2.
+    
+    Mmod = ML.value * I_re + r0 * sig_gNFW(rs.value,gamma.value)
+    lp2 = (MEIN-Mmod)**2. / DMEIN**2.
+    return lp1+lp2
+
+@pymc.observed
+def likelihood(value=0.,lp=logP):
+    return lp
+
+SS = AMAOpt(pars,[likelihood],[logP],cov=cov)
+SS.sample(4000)
+lp,trace,det = SS.result()
+
+print 'results from optimisation:'
+for i in range(len(pars)):
+    pars[i].value = trace[-1,i]
+    print "%18s  %8.3f"%(pars[i].__name__,pars[i].value)
+

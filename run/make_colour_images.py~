@@ -1,0 +1,17 @@
+import pyfits as py,numpy as np,pylab
+import indexTricks as iT
+import colorImage
+from scipy import ndimage
+from linslens import EELsModels_huge as L
+
+dir = '/data/ljo31/Lens/LensModels/twoband/'
+
+CI = colorImage.ColorImage()
+for name in names:
+    try:
+        result = np.load(dir+name+'_212')
+    except:
+        result = np.load(dir+name+'_112')
+    model = L.EELs(result,name)
+    model.Initialise()
+    V,I = model.models

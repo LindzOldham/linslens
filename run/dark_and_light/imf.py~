@@ -1,0 +1,55 @@
+import numpy as np, pylab as pl, pyfits as py, glob
+
+chab = np.load('/data/ljo31b/EELs/inference/new/huge/chabrier_masses_212.npy')
+salp = np.load('/data/ljo31b/EELs/inference/new/huge/salpeter_masses_212.npy')
+
+chab_m,salp_m = chab[0], salp[0]
+
+names = np.array(['J0837','J0901','J0913'])#,'J1125','J1144','J1218','J1323','J1347','J1446','J1605','J1606','J1619','J2228'])
+
+dir = '/data/ljo31b/EELs/galsub/emceeruns/'
+dir3 = '/data/ljo31b/EELs/esi/kinematics/inference/vdfit/NEW/'
+
+for name in names:
+    n = np.where(names==name)
+    m_chab, m_salp = chab_m[n], salp_m[n]
+
+    file = glob.glob(dir+name+'_parametric_*')
+    file.sort()
+    f = file[-1]
+    while 1:
+        if 'DPL' in f:
+            file = file[:-1]
+            f = file[-1]
+        else:
+            break
+    print f
+    result_PL = np.load(f)
+
+    file = glob.glob(dir+name+'_parametric_DPL*')
+    file.sort()
+    f = file[-1]
+    print f
+    result_DPL = np.load(f)
+
+    lp_PL,trace_PL,dic_PL,_ = result_PL
+    lp_DPL,trace_DPL,dic_DPL,_ = result_DPL
+
+    m_PL, m_DPL = np.median(dic_PL['stellar mass'][:,0])*1e12, np.median(dic_DPL['stellar mass'][:,0])*1e12
+    m_PL, m_DPL = np.log10(m_PL), np.log10(m_DPL)
+
+    print name
+    print m_PL, m_DPL
+    print m_chab, m_salp
+    alpha_PL_chab = 10**(m_PL-m_chab)
+    alpha_DPL_chab = 10**(m_DPL-m_chab)
+    alpha_PL_salp = 10**(m_PL-m_salp)
+    alpha_DPL_salp = 10**(m_DPL-m_salp)
+    
+    result_K = np.load(dir3+name+'_1.00_lens_esi_indous_vdfit_LENS')
+    lp_K, trace_K, dic_K, _ = result_K
+    s_lens = np.median(dic_K['lens dispersion'])
+    pl.scatter(s_lens,alpha_PL_chab,c='SteelBlue',s=40)
+    pl.scatter(s_lens,alpha_DPL_chab,c='Crimson',s=40)
+
+pl.show()

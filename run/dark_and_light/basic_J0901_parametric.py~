@@ -1,0 +1,211 @@
+import numpy,pyfits,pylab
+import indexTricks as iT
+from pylens import MassModels,pylens,adaptTools as aT,pixellatedTools as pT
+from imageSim import SBModels,convolve
+from scipy.sparse import diags
+import pymc,cPickle
+from scipy import optimize
+import myEmcee_blobs as myEmcee #updateEmcee as myEmcee
+import numpy as np, pylab as pl, pyfits as py
+from pylens import lensModel
+from scipy.interpolate import RectBivariateSpline
+import adaptToolsBug as BB
+from linslens import EELsKeckLensModels as K, EELsImages_huge as Image, EELsModels_huge as L
+import indexTricks as iT
+from linslens.GrabImages_huge import *
+
+from matplotlib import rcParams
+rcParams['xtick.direction'] = 'in'
+rcParams['ytick.direction'] = 'onut'
+
+name = 'J0901'
+file = py.open('/data/ljo31b/EELs/galsub/images/'+name+'_maxlnL.fits')
+img1,img2 = file[1].data, file[2].data
+
+# make images 120 pixels across
+XX=60.
+my,mx = img1.shape[0]/2., img1.shape[1]/2.
+img1,img2 = img1[my-XX:my+XX,mx-XX:mx+XX], img2[my-XX:my+XX,mx-XX:mx+XX]
+#sig1 = py.open('/data/ljo31b/EELs/galsub/images/'+name+'_maxlnL_sig.fits')[1].data[my-XX:my+XX,mx-XX:mx+XX]
+
+_,sig1,psf1,_,sig2,psf2,DX,DY,_,mask = EasyAddImages(name)
+psf1 = psf1/np.sum(psf1)
+psf2 = psf2/np.sum(psf2)
+sig1,sig2,mask = sig1[my-XX:my+XX,mx-XX:mx+XX], sig2[my-XX:my+XX,mx-XX:mx+XX], mask[my-XX:my+XX,mx-XX:mx+XX]
+mask = mask==0.
+OVRS=1
+
+y,x = iT.coords(img1.shape)
+x,y = x+DX+(mx-XX), y+DY+(my-XX.) 
+
+result = np.load('/data/ljo31/Lens/LensModels/twoband/'+name+'_211')
+#result = np.load('/data/ljo31/Lens/J0901/basickest_6temps_200walkers_120pixels_smallcov')
+lp,trace,dic,_=result
+a1,a3 = numpy.unravel_index(lp[:,0].argmax(),lp[:,0].shape)
+a2=0.
+
+# now - make a parametric model as the pix model is being so weird!!!
+imgs = [img1,img2]
+sigs = [sig1,sig2]
+psfs = [psf1,psf2]
+PSFs = []
+for i in range(len(psfs)):
+    psf = psfs[i]
+    image = imgs[i]
+    psf /= psf.sum()
+    psf = convolve.convolve(image,psf)[1]
+    PSFs.append(psf)
+
+dxs = [0.,dic['xoffset'][a1,0,a3]]
+dys = [0.,dic['yoffset'][a1,0,a3]]
+
+# lens
+vx,vy = dic['Lens 1 x'][a1,0,a3], dic['Lens 1 y'][a1,0,a3]
+X = pymc.Uniform('Lens 1 x',vx-5,vx+5,value=vx)
+Y = pymc.Uniform('Lens 1 y',vy-5,vy+5,vy)
+B = pymc.Uniform('Lens 1 b',0.5,100.,value=dic['Lens 1 b']/2.)
+Q = pymc.Uniform('Lens 1 q',0.1,1.0,value=dic['Galaxy 2 q'][a1,0,a3])
+ETA = pymc.Uniform('Lens 1 eta',0.5,1.5,value=1.)
+PA = pymc.Uniform('Lens 1 pa',-180,180.,value=dic['Lens 1 pa'][a1,0,a3])
+
+SH = pymc.Uniform('extShear',-0.3,0.3,value=dic['extShear'][a1,0,a3])
+SHPA = pymc.Uniform('extShear PA',-180.,180,value=dic['extShear PA'][a1,0,a3])
+
+lens1 = MassModels.PowerLaw('Lens 1',{'x':X,'y':Y,'b':B,'eta':ETA,'q':Q,'pa':PA})
+shear = MassModels.ExtShear('shear',{'x':X,'y':Y,'b':SH,'pa':SHPA})
+lenses = [lens1,shear]
+pars = [X,Y,B,Q,ETA,PA,SH,SHPA]
+cov = [0.5,0.5,0.5,0.1,0.1,5.,0.05,5.]
+
+# source
+sx,sy = dic['Source 1 x'][a1,0,a3], dic['Source 1 y'][a1,0,a3]
+SX = pymc.Uniform('Source 1 x',sx-5,sx+5,sx)
+SY = pymc.Uniform('Source 1 y',sy-5,sy+5,sy)
+SR = pymc.Uniform('Source 1 re',0.5,100,dic['Source 1 re'][a1,0,a3])
+SN = pymc.Uniform('Source 1 n',0.5,8,dic['Source 1 n'][a1,0,a3])
+SPA = pymc.Uniform('Source 1 pa',-90,90,dic['Source 1 pa'][a1,0,a3])
+SQ = pymc.Uniform('Source 1 q',0.2,1.,dic['Source 1 q'][a1,0,a3])
+src = SBObjects.Sersic('Source 1',{'x':SX,'y':SY,'pa':SPA,'q':SQ,'re':SR,'n':SN})
+pars += [SX, SY, SR, SN, SPA, SQ]
+cov += [0.5,0.5,0.5,0.2,1.,0.05]
+
+
+
+# with M/L deflections
+@pymc.deterministic
+def logP(value=0.,p=pars):
+    lp = 0.
+    for i in range(len(imgs)):
+        dx,dy = dxs[i],dys[i]
+        xp,yp = xc+dx,yc+dy
+        image,sigma,psf = imgs[i],sigs[i],PSFs[i]
+        imin,sigin,xin,yin = image[mask], sigma[mask],xp[mask2],yp[mask2]
+        model = np.empty((2,imin.size))
+        for lens in lenses:
+            lens.setPars()
+        x0,y0 = pylens.getDeflections(lenses,[xin,yin])
+        x0 -= 
+        src.setPars()
+        tmp = xc*0.
+        tmp[mask] = src.pixeval(x0,y0,1.,csub=21)
+        tmp = iT.resamp(tmp,OVRS,True)
+        tmp = convolve.convolve(tmp,psf,False)[0]
+        model[0] = tmp[mask].ravel()
+        model[1] = np.ones(model[1].size)
+        
+        rhs = (imin/sigin) # data
+        op = (model/sigin).T # model matrix
+        fit, chi = optimize.nnls(op,rhs)
+        model = (model.T*fit).sum(1)
+        resid = (model-imin)/sigin
+        lp += -0.5*(resid**2.).sum()
+    return lp
+
+
+
+@pymc.observed
+def likelihood(value=0.,tmp=pars):
+    return doFit(None,doReg=True,updateReg=False,checkImgs=True,levMar=False)
+
+cov = numpy.array(cov)
+
+print 'about to do doFit - i.e. get the regularisation for the current model'
+
+doFit(None,True,False,False)
+doFit(None,True,False,False)
+print 'done doFit'
+
+xl,yl = pylens.getDeflections(lenses,coords)
+src.update(xl,yl)
+print 'reg',reg
+osrc = showRes(xl,yl,src,PSFm,img,sig,mask,ifltm,vfltm,cmatm,reg,0,400)
+pylab.show()
+print 'reg',reg
+'''
+S = myEmcee.PTEmcee(pars+[likelihood],cov=cov,nthreads=8,nwalkers=200,ntemps=6)
+S.sample(500)
+
+print 'done emcee'
+outFile = '/data/ljo31/Lens/J0901/basickest_6temps_200walkers_120pixels_smallcov'
+
+f = open(outFile,'wb')
+cPickle.dump(S.result(),f,2)
+f.close()
+
+print 'cPickled!'
+
+result = S.result()
+lp,trace,dic,_ = result
+a1,a3 = numpy.unravel_index(lp[:,0].argmax(),lp[:,0].shape)
+a2=0
+for i in range(len(pars)):
+    pars[i].value = trace[a1,0,a3,i]
+    print "%18s  %8.3f"%(pars[i].__name__,pars[i].value)
+
+print 'reg',reg
+doFit(None,True,False,False)
+doFit(None,True,False,False)
+print 'reg',reg
+xl,yl = pylens.getDeflections(lenses,coords)
+src.update(xl,yl)
+osrc = showRes(xl,yl,src,PSFm,img,sig,mask,ifltm,vfltm,cmatm,reg,0,400)
+reg=4.
+
+jj=0
+for jj in range(12):
+    S.p0 = trace[-1]
+    print 'sampling'
+    S.sample(500)
+
+    f = open(outFile,'wb')
+    cPickle.dump(S.result(),f,2)
+    f.close()
+
+    result = S.result()
+    lp = result[0]
+
+    trace = numpy.array(result[1])
+    a1,a3 = numpy.unravel_index(lp[:,0].argmax(),lp[:,0].shape)
+    for i in range(len(pars)):
+        pars[i].value = trace[a1,0,a3,i]
+    print jj
+    jj+=1
+    doFit(None,True,False,False)
+    doFit(None,True,False,False)
+    print reg
+    xl,yl = pylens.getDeflections(lenses,coords)
+    src.update(xl,yl)
+    reg = 4.
+
+print 'das Ende'
+
+print reg
+doFit(None,True,False,False)
+doFit(None,True,False,False)
+print reg
+xl,yl = pylens.getDeflections(lenses,coords)
+src.update(xl,yl)
+osrc = showRes(xl,yl,src,PSFm,img,sig,mask,ifltm,vfltm,cmatm,reg,0,400)
+pylab.show()
+
+'''

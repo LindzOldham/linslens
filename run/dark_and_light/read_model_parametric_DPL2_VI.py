@@ -1,0 +1,394 @@
+import numpy as np, pylab as pl
+from linslens.Plotter import *
+import indexTricks as iT
+from pylens import pylens
+from imageSim import SBObjects,convolve
+from scipy.sparse import diags
+import pymc,cPickle
+import myEmcee_blobs as myEmcee
+from linslens.GrabImages_huge import *
+import glob
+from scipy.special import gamma
+import lenslib
+from astLib import astCalc
+from jeans.makemodel import deproject
+from MWApython.pylens import MassModels
+from linslens.Profiles import gNFW
+from scipy.special import beta, hyp2f1 as hyp
+
+''' lets do these one at a time for now, to avoid errors '''
+''' start off with power laws '''
+''' pixellated sources '''
+''' band by band for now? pixellated sources on many bands? '''
+
+def MakeModel(name,result,oresult,plotresid=False,plotmass=True,getLP=True):
+    
+    olp,otrace,odic,_ = oresult
+    lp,trace,dic,_=result
+    if len(olp.shape)==3:
+        olp = olp[:,0]
+        for key in odic.keys():
+            odic[key] = odic[key][:,0]
+    oa1,oa2 = np.unravel_index(olp.argmax(),olp.shape)
+    a1,a3 = np.unravel_index(lp[:,0].argmax(),lp[:,0].shape)
+    a2=0.
+    
+    # set up data
+    imgs = [img1,img2]
+    sigs = [sig1,sig2]
+    psfs = [psf1,psf2]
+    PSFs = []
+    for i in range(len(psfs)):
+        psf = psfs[i]
+        image = imgs[i]
+        psf /= psf.sum()
+        psf = convolve.convolve(image,psf)[1]
+        PSFs.append(psf)
+
+    # set up parameters
+    dxs = [0.,odic['xoffset'][oa1,oa2]]
+    dys = [0.,odic['yoffset'][oa1,oa2]]
+
+    # lens
+    X = dic['Lens 1 x'][a1,0,a3]
+    Y = dic['Lens 1 y'][a1,0,a3]
+    B =dic['Lens 1 b'][a1,0,a3]
+    Q = dic['Lens 1 q'][a1,0,a3]
+    GAMMA = dic['Lens 1 gamma'][a1,0,a3]
+    PA = dic['Lens 1 pa'][a1,0,a3]
+    RS = dic['Lens 1 rs'][a1,0,a3]
+
+    SH = dic['extShear'][a1,0,a3]
+    SHPA = dic['extShear PA'][a1,0,a3]
+
+    lens1 = MassModels.DPL_2('Lens 1',{'x':X,'y':Y,'b':B,'eta':GAMMA,'rs':RS,'q':Q,'pa':PA})
+    shear = MassModels.ExtShear('shear',{'x':X,'y':Y,'b':SH,'pa':SHPA})
+    lenses = [lens1,shear]
+    
+    # source 1
+    SX = dic['Source 1 x'][a1,0,a3]
+    SY = dic['Source 1 y'][a1,0,a3]
+    SR = dic['Source 1 re'][a1,0,a3]
+    SN = dic['Source 1 n'][a1,0,a3]
+    SPA = dic['Source 1 pa'][a1,0,a3]
+    SQ = dic['Source 1 q'][a1,0,a3]
+    src = SBObjects.Sersic('Source 1',{'x':SX,'y':SY,'pa':SPA,'q':SQ,'re':SR,'n':SN,'c':2.})
+    srcs = [src]
+
+    # source 2
+    if 'Source 2 re' in dic.keys():
+        SX2 = dic['Source 2 x'][a1,0,a3]
+        SY2 = dic['Source 2 y'][a1,0,a3]
+        SR2 = dic['Source 2 re'][a1,0,a3]
+        SN2 = dic['Source 2 n'][a1,0,a3]
+        SPA2 = dic['Source 2 pa'][a1,0,a3]
+        SQ2 = dic['Source 2 q'][a1,0,a3]
+        src2 = SBObjects.Sersic('Source 2',{'x':SX2,'y':SY2,'pa':SPA2,'q':SQ2,'re':SR2,'n':SN2,'c':2.})
+        srcs.append(src2)
+
+    Mstar = dic['stellar mass'][a1,0,a3]
+
+    colours = ['V', 'I']
+    models = []
+    fits = []
+    LP=0
+    for i in range(len(imgs)):
+        dx,dy = dxs[i],dys[i]
+        xp,yp = xc+dx,yc+dy
+        image,sigma,psf = imgs[i],sigs[i],PSFs[i]
+        imin,sigin,xin,yin = image.flatten(), sigma.flatten(),xp.flatten(),yp.flatten()
+        model = np.empty((len(srcs)+1,imin.size))
+        for lens in lenses:
+            lens.setPars()
+        x0,y0 = pylens.getDeflections(lenses,[xin,yin])
+        x0 -= Mstar*xstars[i]
+        y0 -= Mstar*ystars[i] 
+        
+        n = 0
+        for src in srcs:
+            src.setPars()
+            tmp = xc*0.
+            tmp = src.pixeval(x0,y0,1./OVRS,csub=31).reshape(xc.shape)
+            tmp = iT.resamp(tmp,OVRS,True)
+            tmp = convolve.convolve(tmp,psf,False)[0]
+            model[n] = tmp.ravel()
+            if name == 'J0837' and src.name == 'Source 2':
+                model[n] *= -1.
+                print 'it is J0837'
+            n+=1
+        model[n] = np.ones(model[n].shape)
+        n+=1
+        rhs = image[mask]/sigma[mask]
+        mmodel = model.reshape((n,image.shape[0],image.shape[1]))
+        mmmodel = np.empty((n,image[mask].size))
+        for m in range(mmodel.shape[0]):
+            mmmodel[m] = mmodel[m][mask]
+        op = (mmmodel/sigma[mask]).T
+        rhs = image[mask]/sigma[mask]
+        fit, chi = optimize.nnls(op,rhs)
+        components = (model.T*fit).T.reshape((n,image.shape[0],image.shape[1]))
+        model = components.sum(0)
+        models.append(model)
+        if getLP:
+            resid = (model-image)/sigma
+            LP += -0.5*(resid**2.).sum()
+        if plotresid==True:
+            NotPlicely(image,model,sigma,colours[i])
+            pl.show()
+        #for ii in range(3):
+        #    pl.figure()
+        #    pl.imshow(components[ii],interpolation='nearest',origin='lower')
+        #    pl.colorbar()
+        #pl.show()
+        #py.writeto(name+'_model_'+str(i)+'.fits',model,clobber=True)
+        #py.writeto(name+'_resid_'+str(i)+'.fits',(model-image)/sigma,clobber=True)
+        #py.writeto(name+'_image_'+str(i)+'.fits',image,clobber=True)
+    if getLP:
+        print 'likelihood: ', LP
+    if plotmass==True:
+        # write this up as a function!
+        # this is using circularised radii -- make a 2D plot next!
+        # dark mass
+        zl,zs = lz[name][0], sz[name][0]
+        sig_crit = lenslib.sig_crit(zl,zs) # solar masses per Mpc^2
+        sig_crit /= (1e3)**2. # solar masses per kpc^2
+        scale = astCalc.da(zl)*np.pi/180./3600 * 1e3
+        rein = B*0.05*scale # rein in kpc
+        r = np.logspace(-7,3,3500)
+        lr = r[:-100]
+        DM, DM_rho = gNFW(lr, sig_crit, rein, GAMMA, RS*0.05*scale) 
+        print DM[0],DM[-1]
+
+        # stellar mass -- deproject the sersic, converting everything to kpc as we go
+        if 'Galaxy 1 x' in odic.keys():
+            gx1,gy1 = odic['Galaxy 1 x'][oa1,oa2]*0.05*scale, odic['Galaxy 1 y'][oa1,oa2]*0.05*scale
+        else:
+            gx1,gy1 = odic['Galaxy 2 x'][oa1,oa2]*0.05*scale, odic['Galaxy 2 y'][oa1,oa2]*0.05*scale
+        gr1,gn1 = odic['Galaxy 1 re'][oa1,oa2]*0.05*scale, odic['Galaxy 1 n'][oa1,oa2]
+        gpa1,gq1 = odic['Galaxy 1 pa'][oa1,oa2], odic['Galaxy 1 q'][oa1,oa2]
+        frac = [1.,0.]
+        gal1 = SBModels.Sersic('galaxy 1',{'x':0,'y':0,'re':gr1,'n':gn1,'pa':gpa1,'q':gq1})
+        gals = [gal1]
+        if 'Galaxy 2 re' in odic.keys():
+            if 'Galaxy 2 x' not in odic.keys():
+                gx2,gy2 = gx1, gy1
+            else:
+                gx2,gy2 = odic['Galaxy 2 x'][oa1,oa2]*0.05*scale, odic['Galaxy 2 y'][oa1,oa2]*0.05*scale
+            gr2,gn2 = odic['Galaxy 2 re'][oa1,oa2]*0.05*scale, odic['Galaxy 2 n'][oa1,oa2]
+            try:
+                gpa2,gq2 = odic['Galaxy 2 pa'][oa1,oa2], odic['Galaxy 2 q'][oa1,oa2]
+            except:
+                gpa2,gq2 = odic['Galaxy 1 pa'][oa1,oa2], odic['Galaxy 2 q'][oa1,oa2]
+            frac = fracs[name]
+            gal2 = SBModels.Sersic('galaxy 2',{'x':gx2-gx1,'y':gy2-gy1,'re':gr2,'n':gn2,'pa':gpa2,'q':gq2})
+            gals.append(gal2) 
+        #print frac
+        if frac[1]>frac[0]:
+            # centroid on the brightest component
+            gals[0].x += (gx1-gx2)
+            gals[0].y += (gy1-gy2)
+            gals[1].x,gals[1].y = 0.,0.
+        sb = np.zeros(r.size)
+        for ii in range(len(gals)):
+            sb += frac[ii]*gals[ii].eval(r)
+        #print gals[0].re, gals[1].re
+        #deproject
+        lr,light = deproject(r,sb)
+        # cumulatively sum
+        lightmod = splrep(lr,light*4.*np.pi*lr**2.)
+        cumlight = np.array([splint(0,lr[ii],lightmod) for ii in range(lr.size)])
+        cumlight /= cumlight[-1]
+        LM = cumlight*Mstar*1e12
+        if name == 'J2228':
+            LM *= 5. # different deflection angle normalisation!
+        LM[0] = LM[1]
+        #pl.figure()
+        #pl.loglog(lr,DM_rho,label='DM')
+        #pl.loglog(lr,light,label='LM')
+        #pl.ylabel(r'$\rho (M_{\odot}$kpc$^{-3}$)')
+        #pl.xlabel('r (kpc)')
+        pl.figure()
+        pl.plot(lr,DM,color='k',ls=':',label='DM')
+        pl.plot(lr,LM,color='k',ls='--',label='LM')
+        pl.plot(lr,LM+DM,color='k',label='total')
+        pl.yscale('log')
+        pl.legend(loc='lower right')
+        pl.ylabel(r'M (M$_{\odot}$)')
+        pl.xlabel('r (kpc)')
+        pl.axvline(rein,color='k',ls='-.')
+        pl.axis([0,20,1e7,6e11])
+        pl.title(name)
+        #pl.show()
+        # and logged
+        pl.figure()
+        pl.plot(lr,DM,color='k',ls=':',label='DM')
+        pl.plot(lr,LM,color='k',ls='--',label='LM')
+        pl.plot(lr,LM+DM,color='k',label='total')
+        pl.legend(loc='upper left')
+        pl.ylabel(r'M (M$_{\odot}$)')
+        pl.xlabel('r (kpc)')
+        pl.axis([0,20,1e7,5e11])
+        pl.title(name)
+        pl.show()
+
+    pl.figure()
+    pl.plot(lp[:,0])
+    pl.show()
+
+    pl.figure(figsize=(24,7))
+    pl.subplot(141)
+    pl.hist(dic['stellar mass'][:,0].ravel()*10.,30,histtype='stepfilled',alpha=0.6)
+    pl.xlabel('M$_{\star}$ ($10^{11}$M$_{\odot})$')
+    pl.subplot(142)
+    pl.hist(dic['Lens 1 gamma'][:,0].ravel(),30,histtype='stepfilled',alpha=0.6)
+    pl.xlabel('$\gamma$')
+    pl.subplot(143)
+    pl.hist(dic['Lens 1 rs'][:,0].ravel()*0.05*scale,30,histtype='stepfilled',alpha=0.6)
+    pl.xlabel('$r_s$ / kpc')
+    pl.subplot(144)
+    pl.hist(dic['Lens 1 b'][:,0].ravel()*0.05*scale,30,histtype='stepfilled',alpha=0.6)
+    pl.xlabel('$r_{Ein}$ / kpc')
+    pl.show()
+
+    # make table
+    l,u,d = [], [], []
+    for key in dic.keys():
+        f = dic[key][:,0].reshape((trace[:,0].shape[0]*trace[:,0].shape[1]))
+        lo,med,up = np.percentile(f,50)-np.percentile(f,16), np.percentile(f,50), np.percentile(f,84)-np.percentile(f,50) 
+        d.append((key,med))
+        l.append((key,lo))
+        u.append((key,up))
+    Ddic = dict(d)                    
+    Ldic = dict(l)
+    Udic = dict(u)
+    Ddic['Source 1 x'] -= Ddic['Lens 1 x']
+    Ddic['Source 1 y'] -= Ddic['Lens 1 y']
+    if 'Source 2 x' in Ddic.keys():
+        Ddic['Source 2 x'] -= Ddic['Lens 1 x']
+        Ddic['Source 2 y'] -= Ddic['Lens 1 y']
+    #for key in ['Source 1 x','Source 1 y','Lens 1 x','Lens 1 y','Lens 1 b','Source 1 re','Source 2 re','Source 2 x','Source 2 y','Lens 1 rs']:
+    #    if key in Ddic.keys():
+    #        Ddic[key] *= 0.02
+    #        Ldic[key] *= 0.02
+    #        Udic[key] *= 0.02
+
+    for key in ['b','q', 'pa', 'gamma', 'rs']:
+        print  '%.2f'%Ddic['Lens 1 '+key], '$_{-', '%.2f'%Ldic['Lens 1 '+key], '}^{+', '%.2f'%Udic['Lens 1 '+key], r'}$ & ',
+
+    print '%.2f'%(10.*Ddic['stellar mass']), '$_{-', '%.2f'%Ldic['stellar mass'], '}^{+', '%.2f'%Udic['stellar mass'], r'}$ \\'
+    
+
+   
+
+    # finally, read kinematics
+    arr = np.column_stack((RS*0.05*scale,GAMMA))
+    BB,GG = B/RS, GAMMA
+    R0 = RS*0.05*scale
+    N=3.0001
+    drb = 2*R0/BB*(beta(((N-3.)/2.),((3.-GG)/2.)) - beta(((N-3.)/2.),(3./2.)) * (1+BB**2)**((3-N)/2.) * hyp((N-3.)/2.,GG/2.,N/2., 1./(1+BB**2))) 
+    BB = 1./R0
+    dr1 = 2*R0/BB*(beta(((N-3.)/2.),((3.-GG)/2.)) - beta(((N-3.)/2.),(3./2.)) * (1+BB**2)**((3-N)/2.) * hyp((N-3.)/2.,GG/2.,N/2., 1./(1+BB**2))) 
+    kappa = B*0.05*scale * dr1/drb
+
+    vd2 = kappa * sigma_dm.eval(arr)
+    vd1 =  Mstar*sigma_star**2.
+    s2 = vd2 + vd1
+    print 'KINEMATICS'
+    print '%.2f,%.2f,%.2f'%(s2**0.5,vd1**0.5,vd2**0.5)
+
+
+# make image smaller
+import sys
+name = sys.argv[1] #'J0901'
+print name
+#X = 0
+file = py.open('/data/ljo31b/EELs/galsub/images/'+name+'_maxlnL.fits')
+if name == 'J1144':
+    file = py.open('/data/ljo31b/EELs/galsub/images/'+name+'newmodel_maxlnL.fits')
+img1,img2 = file[1].data, file[2].data
+
+# make images 120 pixels across
+XX=60.
+my,mx = img1.shape[0]/2., img1.shape[1]/2.
+_,sig1,psf1,_,sig2,psf2,DX,DY,_,mask = EasyAddImages(name)
+
+img1,img2 = img1[my-XX:my+XX,mx-XX:mx+XX], img2[my-XX:my+XX,mx-XX:mx+XX]
+sig1,sig2,mask = sig1[my-XX:my+XX,mx-XX:mx+XX],sig2[my-XX:my+XX,mx-XX:mx+XX],mask[my-XX:my+XX,mx-XX:mx+XX]
+
+if name == 'J0837':
+    mask += py.open('/data/ljo31b/EELs/galsub/masks/J0837_extra.fits')[0].data
+pl.figure()
+pl.imshow(mask,origin='nearest')
+pl.show()
+psf1 = psf1/np.sum(psf1)
+psf2 = psf2/np.sum(psf2)
+
+OVRS=1
+if name in ['J1125','J1347']:
+    OVRS=2
+yc,xc = iT.overSample(img1.shape,OVRS)
+yo,xo = iT.coords(img1.shape)
+xc,yc = xc+DX+(mx-XX), yc+DY+(my-XX) 
+xo,yo = xo+DX+(mx-XX), yo+DY+(my-XX) 
+if OVRS >1:
+    tck = RectBivariateSpline(yo[:,0],xo[0],mask)
+    mask2 = tck.ev(xc,yc)
+    mask2[mask2<0.5] = 0
+    mask2[mask2>0.5] = 1
+    mask2 = mask2==0
+mask = mask==0
+if OVRS == 1:
+    mask2 = mask
+
+# stellar mass deflection angles
+V,I,_ = np.load('/data/ljo31b/EELs/galsub/deflections/light_deflections_'+name+'.npy')
+if name == 'J1144':
+    V,I = np.load('/data/ljo31b/EELs/galsub/deflections/light_deflections_'+name+'_newmodel.npy')
+# make these the right shapes!
+V = [V[ii][my-XX:my+XX,mx-XX:mx+XX] for ii in range(len(V))]
+I = [I[ii][my-XX:my+XX,mx-XX:mx+XX] for ii in range(len(I))]
+if OVRS>1:
+    for i in range(len(V)):
+        tck = RectBivariateSpline(yo[:,0],xo[0],V[i])
+        V[i] = tck.ev(yc,xc)
+        tck = RectBivariateSpline(yo[:,0],xo[0],I[i])
+        I[i] = tck.ev(yc,xc)
+xstars, ystars = [V[0].flatten(), I[0].flatten()], [V[1].flatten(), I[1].flatten()]
+xstarms, ystarms = [V[0][mask2],I[0][mask2]], [V[1][mask2], I[1][mask2]]
+
+# also add kinematics
+sigma_star = np.loadtxt('/data/ljo31b/EELs/phys_models/models/sigma_star_'+name+'.dat')[()]
+sigma_dm = np.load('/data/ljo31b/EELs/phys_models/models/interpolators/gNFW_aperture_mass_measure_'+name+'.npy')[()]
+S2N=40. # signal-to-noise of ESI spectra to weight kinematic term
+
+## load ESI kinematics
+dir3 = '/data/ljo31b/EELs/esi/kinematics/inference/vdfit/NEW/'
+result_K = np.load(dir3+name+'_1.00_lens_esi_indous_vdfit_LENS')
+lp_K, trace_K, dic_K, _ = result_K
+SIGMA = np.median(dic_K['lens dispersion'])
+DSIGMA = SIGMA*0.05
+
+
+# load results for making model
+dir = '/data/ljo31b/EELs/galsub/emceeruns/'
+file = glob.glob(dir+name+'_parametric_DPL__VI_*')
+file.sort()
+print 'loading ', file[-1]
+result = np.load(file[-1])
+
+dir = '/data/ljo31/Lens/LensModels/twoband/'
+try:
+    oresult = np.load(dir+name+'_212')
+except:
+    if name == 'J1347':
+        oresult = np.load(dir+name+'_112')
+    else:
+        oresult = np.load(dir+name+'_211')
+if name == 'J1144':
+    oresult = np.load('/data/ljo31/Lens/J1144/twoband_darkandlightprep')
+
+sz = np.load('/data/ljo31/Lens/LensParams/SourceRedshiftsUpdated.npy')[()]
+lz = np.load('/data/ljo31/Lens/LensParams/LensRedshiftsUpdated.npy')[()]
+fracs = np.load('/data/ljo31b/EELs/galsub/fracs.npy')[()]
+MakeModel(name,result,oresult,True,True,True)#True,True,True)#True,True,True)
+

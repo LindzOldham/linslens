@@ -1,0 +1,26 @@
+from MWApython.pylens import MassModels
+import numpy as np, pylab as pl
+import indexTricks as iT
+from imageSim import SBObjects
+
+B,Q,ETA = 10.,0.9,1.
+N1,N2,RS = 2.,2.,20.
+l1 = MassModels.PowerLaw('l1',{'x':0,'y':0,'b':B,'eta':ETA,'q':Q,'pa':0.})
+l2 = MassModels.DPL('l2',{'x':0,'y':0,'b':B,'eta1':2.,'eta2':2.,'q':Q,'pa':0.})
+s = SBObjects.Sersic('s',{'x':0,'y':0,'re':5,'n':4,'q':1,'pa':0})
+y,x = iT.coords((81,81))-40
+
+x1,y1 = pylens.getDeflections(l1,[x,y])
+x2,y2 = pylens.getDeflections(l2,[x,y])
+
+s1 = s.pixeval(x1,y1,csub=31)
+s2 = s.pixeval(x2,y2,csub=31)
+
+pl.figure(figsize=(12,7))
+pl.subplot(121)
+pl.imshow(s1,interpolation='nearest',origin='lower')
+pl.colorbar()
+pl.subplot(122)
+pl.imshow(s2,interpolation='nearest',origin='lower')
+pl.colorbar()
+pl.show()
